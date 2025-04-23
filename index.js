@@ -70,6 +70,7 @@ class GuildState {
             guildId: this.guildId,
             adapterCreator
         });
+        this.voiceconn.subscribe(this.audioplayer);
     }
 
     leftCurrentVoiceChannel() {
@@ -92,7 +93,6 @@ class GuildState {
      * @param {AudioResource} audioResource
      */
     playAudioResource(audioResource) {
-        this.voiceconn.subscribe(this.audioplayer);
         this.audioplayer.play(audioResource);
     }
 
@@ -125,7 +125,7 @@ class GuildState {
             const { stream, inputType } = await demuxProbe(ytdlp.stdout);
             const resource  = createAudioResource(stream, { inputType, })
             this.playAudioResource(resource);
-            this.audioplayer.on(AudioPlayerStatus.Idle, () => {
+            this.audioplayer.once(AudioPlayerStatus.Idle, () => {
                 play(callback);
             })
         }
@@ -329,8 +329,7 @@ client.on("messageCreate", async msg => {
             case `${PREFIX}skip`:
                 {
                     guild.stopPlayAudioResource();
-                    const top = guild.musicqueue.shift();
-                    guild.musicqueue.push(top);
+                    guild.audioplayer.removeAllListeners()
                     await guild.startPlayMusicQueue(({ title, url }) => {
                         const embed = new EmbedBuilder()
                             .setTitle(title)
