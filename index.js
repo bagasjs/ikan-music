@@ -1,12 +1,13 @@
 // IMPORTING CERTAIN THINGS
 
+import { spawn } from "child_process";
+import { Readable } from "stream";
 import { Client, GatewayIntentBits, EmbedBuilder, PermissionFlagsBits } from "discord.js";
 import { AudioPlayer, AudioPlayerStatus, AudioResource, NoSubscriberBehavior,
     StreamType,
     VoiceConnection,
     createAudioPlayer, createAudioResource, demuxProbe, joinVoiceChannel } from "@discordjs/voice"
-import yts from "yt-search";
-import ytdl from "ytdl-core";
+import ytsr from "ytsr";
 import { config } from "dotenv";
 
 config();
@@ -112,8 +113,16 @@ class GuildState {
             this.musicqueue.push(top);
             console.log(top);
             callback(top);
-            const ytdlStream = ytdl(top.url, { filter: "audioonly", type: StreamType.WebmOpus });
-            const { stream, inputType } = await demuxProbe(ytdlStream);
+
+            const ytdlp = spawn("yt-dlp", [
+                "-f", "bestaudio",
+                "-o", "-",
+                "--no-playlist",
+                top.url,
+            ], { stdio: ["ignore", "pipe"] });
+
+
+            const { stream, inputType } = await demuxProbe(ytdlp.stdout);
             const resource  = createAudioResource(stream, { inputType, })
             this.playAudioResource(resource);
             this.audioplayer.on(AudioPlayerStatus.Idle, () => {
@@ -164,7 +173,7 @@ client.on("messageCreate", async msg => {
                     const embed = new EmbedBuilder()
                     .setTitle("Help ~ IKAN")
                     .setColor(0xF1C40F)
-                    .setDescription(BOT_INFO)
+                    .setDescription("**IKAN** is a free discord music bot. The name itself is taken from the word fish in Indonesian. Why did I name it 'IKAN'? Because I am a fish")
                     .setAuthor({ name: client.user.username, iconURL: BOT_ICON, })
                     .setThumbnail(BOT_ICON)
                     .addFields(
@@ -249,17 +258,20 @@ client.on("messageCreate", async msg => {
             case `${PREFIX}add`:
                 {
                     const input = args.splice(1).join(" ")
-                    yts(input).then(ret => {
-                        const music_data = ret.all[0]
-                        const embed = new EmbedBuilder()
-                            .setTitle(music_data.title)
-                            .setURL(music_data.url)
-                            .setAuthor({ 
-                                name: "Adding music...",
-                                iconURL: `https://cdn.discordapp.com/avatars/${client.user.id}/${client.user.avatar}.webp`
-                            })
-                        msg.channel.send({ embeds: [embed] })
-                        guild.musicqueue.push({ title: music_data.title, url: music_data.url })
+                    ytsr.getFilters(input).then(filters => {
+                        const filter = filters.get("Type").get("Video")
+                        ytsr(filter.url, { limit: 1 }).then(ret => {
+                            const music_data = ret.items[0]
+                            const embed = new EmbedBuilder()
+                                .setTitle(music_data.title)
+                                .setURL(music_data.url)
+                                .setAuthor({ 
+                                    name: "Adding music...",
+                                    iconURL: `https://cdn.discordapp.com/avatars/${client.user.id}/${client.user.avatar}.webp`
+                                })
+                            msg.channel.send({ embeds: [embed] })
+                            guild.musicqueue.push({ title: music_data.title, url: music_data.url })
+                        });
                     })
                     msg.channel.send("Searching music...")
                 } break;
@@ -316,9 +328,19 @@ client.on("messageCreate", async msg => {
                 } break;
             case `${PREFIX}skip`:
                 {
-                    msg.reply("Sorry since the developer of discord.js significantly modifying the library "+
-                        "I am not handling this command yet")
-                    // if(server.dispatcher) server.dispatcher.end();
+                    guild.stopPlayAudioResource();
+                    const top = guild.musicqueue.shift();
+                    guild.musicqueue.push(top);
+                    await guild.startPlayMusicQueue(({ title, url }) => {
+                        const embed = new EmbedBuilder()
+                            .setTitle(title)
+                            .setURL(url)
+                            .setAuthor({ 
+                                name: "Playing...",
+                                iconURL: `https://cdn.discordapp.com/avatars/${client.user.id}/${client.user.avatar}.webp`,
+                            }) 
+                        msg.channel.send({ embeds: [embed] })
+                    });
                 } break;
         }
 
